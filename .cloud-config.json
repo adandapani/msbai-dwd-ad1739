@@ -1,0 +1,12 @@
+{
+  "provider": "gcp",
+  "project_id": "proud-sweep-323918",
+  "service_account": "fifa-dashboard-sa@proud-sweep-323918.iam.gserviceaccount.com",
+  "roles": [
+    "roles/bigquery.dataEditor",
+    "roles/bigquery.jobUser",
+    "roles/bigquery.dataViewer"
+  ],
+  "dataset": "fifa_2026",
+  "created_at": "2026-06-27T16:00:00Z"
+}

@@ -2,3 +2,8 @@
 # Cloud -- never commit plaintext credentials
 credentials.json
 credentials_clean.json
+/tmp/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+__pycache__/
