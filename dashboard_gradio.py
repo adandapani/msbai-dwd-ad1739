@@ -20,6 +20,9 @@ def get_client():
     if sa_json:
         import json
         info = json.loads(sa_json)
+        # Render stores \n as literal backslash-n — restore real newlines
+        if "private_key" in info:
+            info["private_key"] = info["private_key"].replace("\\n", "\n")
         creds = service_account.Credentials.from_service_account_info(
             info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
