@@ -427,38 +427,35 @@ def bars_html(bars: pd.DataFrame, r16_teams=None) -> str:
 
         # build map marker
         coords = _extract_coords(spots)
-        # jitter slightly so stacked pins don't overlap
         lat = coords[0] + (random.random() - 0.5) * 0.004
         lng = coords[1] + (random.random() - 0.5) * 0.004
         pin_color = "#f59e0b" if is_r16 else ("#94a3b8" if is_generic else "#3b82f6")
-        popup = f"{flag} {country}<br><small>{spots[:80]}{'…' if len(spots)>80 else ''}</small>"
-        markers.append({"lat": lat, "lng": lng, "color": pin_color, "popup": popup, "country": country})
+        popup_text = f"{flag} <b>{country}</b>{'  ⚡R16' if is_r16 else ''}{'  🖥️' if big_screen else ''}{'  🎟️' if needs_ticket else ''}<br><small style='color:#475569'>{spots[:100]}{'…' if len(spots)>100 else ''}</small>"
+        markers.append({"lat": lat, "lng": lng, "color": pin_color, "popup": popup_text})
 
+    import base64
     markers_json = json.dumps(markers)
-
-    map_html = f"""
-    <div id="fifa-map" style="height:520px;border-radius:12px;overflow:hidden;border:1.5px solid #e2e8f0;"></div>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-    (function(){{
-      if(window._fifaMapInit) return; window._fifaMapInit = true;
-      var map = L.map('fifa-map').setView([40.730, -73.960], 11);
-      L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png',{{
-        attribution:'© OpenStreetMap © CARTO', maxZoom:18
-      }}).addTo(map);
-      var markers = {markers_json};
-      markers.forEach(function(m){{
-        var icon = L.divIcon({{
-          html: '<div style="background:'+m.color+';width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
-          iconSize:[14,14], iconAnchor:[7,7], className:''
-        }});
-        L.marker([m.lat, m.lng], {{icon:icon}})
-          .addTo(map)
-          .bindPopup('<b>'+m.country+'</b><br>'+m.popup.replace(m.country+'<br>',''), {{maxWidth:220}});
-      }});
-    }})();
-    </script>"""
+    leaflet_page = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>body{{margin:0;padding:0;font-family:sans-serif;}}#map{{width:100%;height:100vh;}}</style>
+</head><body>
+<div id="map"></div>
+<script>
+var map = L.map('map').setView([40.730,-73.960],11);
+L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png',{{
+  attribution:'\\u00a9 OpenStreetMap \\u00a9 CARTO',maxZoom:18
+}}).addTo(map);
+var data={markers_json};
+data.forEach(function(m){{
+  var dot='<div style="background:'+m.color+';width:16px;height:16px;border-radius:50%;border:2.5px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.45);"></div>';
+  L.marker([m.lat,m.lng],{{icon:L.divIcon({{html:dot,iconSize:[16,16],iconAnchor:[8,8],className:''}})  }})
+   .addTo(map).bindPopup(m.popup,{{maxWidth:240}});
+}});
+</script></body></html>"""
+    encoded = base64.b64encode(leaflet_page.encode()).decode()
+    map_html = f'<iframe src="data:text/html;base64,{encoded}" width="100%" height="520px" style="border:none;border-radius:12px;border:1.5px solid #e2e8f0;" frameborder="0" loading="lazy"></iframe>'
 
     legend = """
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:0.78em;align-items:center;">
@@ -618,9 +615,34 @@ button.secondary { background: #1e293b !important; color: #e2e8f0 !important; bo
 input[type=text], input[type=email] { border-radius: 8px !important; border: 1.5px solid #cbd5e1 !important; font-size: 0.9em !important; }
 input[type=text]:focus, input[type=email]:focus { border-color: #06b6d4 !important; box-shadow: 0 0 0 3px rgba(6,182,212,0.15) !important; }
 footer { display: none !important; }
+[data-nav-idx] { cursor: pointer; }
 """
 
-with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
+# JS injected once at page load — wires nav cards to tab buttons
+NAV_JS = """
+function() {
+  function wire() {
+    var cards = document.querySelectorAll('[data-nav-idx]');
+    var tabs  = document.querySelectorAll('button[role=tab]');
+    if (!tabs.length) tabs = document.querySelectorAll('.tab-nav button');
+    if (!cards.length || !tabs.length) { setTimeout(wire, 500); return; }
+    cards.forEach(function(card) {
+      card.addEventListener('click', function() {
+        var idx = parseInt(card.getAttribute('data-nav-idx'), 10);
+        if (tabs[idx]) { tabs[idx].click(); tabs[idx].scrollIntoView({behavior:'smooth',block:'nearest'}); }
+      });
+      card.addEventListener('mouseover', function() {
+        card.style.transform = 'translateY(-2px)';
+        card.style.transition = 'transform 0.15s';
+      });
+      card.addEventListener('mouseout', function() { card.style.transform = ''; });
+    });
+  }
+  setTimeout(wire, 900);
+}
+"""
+
+with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS, js=NAV_JS) as app:
     current_email = gr.State("")
 
     # ── Header ────────────────────────────────────────────────────────────────
@@ -643,38 +665,33 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
     </div>
     """)
 
-    # ── Nav guide (clickable cards → jump to tab) ─────────────────────────────
+    # ── Nav guide (data-nav-idx wired by NAV_JS at page load) ────────────────
     gr.HTML("""
     <div style="background:#0b1120;padding:16px 20px 20px;">
-      <div style="font-size:0.7em;font-weight:600;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">Quick Navigation</div>
+      <div style="font-size:0.7em;font-weight:600;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">Click to Navigate</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        <div onclick="document.querySelectorAll('.tab-nav button')[0].click()"
-             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
-             onmouseover="this.style.borderColor='#06b6d4';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+        <div data-nav-idx="0"
+             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
           <div style="font-size:0.82em;font-weight:700;color:#06b6d4;">🗓️ Today's Games</div>
-          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Kickoffs & predictions</div>
+          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Kickoffs &amp; predictions</div>
         </div>
-        <div onclick="document.querySelectorAll('.tab-nav button')[1].click()"
-             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
-             onmouseover="this.style.borderColor='#10b981';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+        <div data-nav-idx="1"
+             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
           <div style="font-size:0.82em;font-weight:700;color:#10b981;">📊 Group Standings</div>
           <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Points table · All groups</div>
         </div>
-        <div onclick="document.querySelectorAll('.tab-nav button')[2].click()"
-             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
-             onmouseover="this.style.borderColor='#f59e0b';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+        <div data-nav-idx="2"
+             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
           <div style="font-size:0.82em;font-weight:700;color:#f59e0b;">🏆 Predictions</div>
           <div style="font-size:0.7em;color:#64748b;margin-top:2px;">AI-ranked favourites</div>
         </div>
-        <div onclick="document.querySelectorAll('.tab-nav button')[3].click()"
-             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
-             onmouseover="this.style.borderColor='#a78bfa';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+        <div data-nav-idx="3"
+             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
           <div style="font-size:0.82em;font-weight:700;color:#a78bfa;">📅 Full Schedule</div>
           <div style="font-size:0.7em;color:#64748b;margin-top:2px;">R32 → R16 → QF → Final</div>
         </div>
-        <div onclick="document.querySelectorAll('.tab-nav button')[4].click()"
-             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
-             onmouseover="this.style.borderColor='#f43f5e';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+        <div data-nav-idx="4"
+             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
           <div style="font-size:0.82em;font-weight:700;color:#f43f5e;">🗽 NYC Bars</div>
           <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Where to watch in NYC</div>
         </div>
