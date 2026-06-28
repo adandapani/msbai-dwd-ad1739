@@ -16,11 +16,20 @@ def get_client():
     key_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if key_path and os.path.exists(key_path):
         return bigquery.Client(project=PROJECT_ID)
+    # Try base64-encoded credentials first (avoids all newline/escaping issues)
+    sa_b64 = os.environ.get("GCP_SERVICE_ACCOUNT_B64")
+    if sa_b64:
+        import json, base64
+        info = json.loads(base64.b64decode(sa_b64).decode())
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        return bigquery.Client(project=PROJECT_ID, credentials=creds)
+
     sa_json = os.environ.get("GCP_SERVICE_ACCOUNT_JSON")
     if sa_json:
         import json
         info = json.loads(sa_json)
-        # Render stores \n as literal backslash-n — restore real newlines
         if "private_key" in info:
             info["private_key"] = info["private_key"].replace("\\n", "\n")
         creds = service_account.Credentials.from_service_account_info(
