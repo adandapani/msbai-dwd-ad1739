@@ -440,11 +440,22 @@ def load_bars():
 
 
 # ── gradio app ────────────────────────────────────────────────────────────────
+# Palette: midnight navy #0b1120 · electric teal #06b6d4 · vivid green #10b981
+#          amber gold #f59e0b · soft white #f8fafc · card white #ffffff
 CSS = """
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f1f5f9; }
-.gradio-container { max-width: 1140px !important; background:white; border-radius:18px; padding:24px !important; box-shadow:0 2px 20px rgba(0,0,0,0.07); }
-.tab-nav button { font-size: 0.92em !important; font-weight: 600 !important; padding: 10px 18px !important; border-radius: 8px !important; }
-.tab-nav button.selected { background: #1d4ed8 !important; color: white !important; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: linear-gradient(160deg,#0b1120 0%,#0f2040 100%); min-height:100vh; }
+.gradio-container { max-width: 1160px !important; background: #f8fafc; border-radius: 20px !important; padding: 0 !important; box-shadow: 0 8px 48px rgba(0,0,0,0.35) !important; overflow: hidden; margin: 24px auto !important; }
+.tab-nav { background: #0b1120 !important; padding: 0 20px !important; border-bottom: 2px solid #06b6d4 !important; }
+.tab-nav button { font-size: 0.88em !important; font-weight: 600 !important; padding: 12px 18px !important; border-radius: 0 !important; color: #94a3b8 !important; border-bottom: 3px solid transparent !important; margin-bottom: -2px !important; }
+.tab-nav button.selected { color: #06b6d4 !important; border-bottom: 3px solid #06b6d4 !important; background: transparent !important; }
+.tab-nav button:hover { color: #e2e8f0 !important; }
+.gradio-tabitem { padding: 20px !important; background: #f8fafc !important; }
+button.primary { background: linear-gradient(135deg,#06b6d4,#0891b2) !important; border: none !important; border-radius: 8px !important; font-weight: 600 !important; }
+button.primary:hover { background: linear-gradient(135deg,#0891b2,#0e7490) !important; }
+button.secondary { background: #1e293b !important; color: #e2e8f0 !important; border: none !important; border-radius: 8px !important; font-weight: 600 !important; }
+input[type=text], input[type=email] { border-radius: 8px !important; border: 1.5px solid #cbd5e1 !important; font-size: 0.9em !important; }
+input[type=text]:focus, input[type=email]:focus { border-color: #06b6d4 !important; box-shadow: 0 0 0 3px rgba(6,182,212,0.15) !important; }
 footer { display: none !important; }
 """
 
@@ -453,54 +464,66 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
 
     # ── Header ────────────────────────────────────────────────────────────────
     gr.HTML("""
-    <div style="background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 60%,#059669 100%);padding:28px 32px;border-radius:16px;margin-bottom:16px;color:white;box-shadow:0 4px 24px rgba(0,0,0,0.18);">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;">
-        <span style="font-size:2.2em;">⚽</span>
-        <h1 style="margin:0;font-size:1.9em;font-weight:800;letter-spacing:-0.5px;">FIFA 2026 World Cup · NYC Dashboard</h1>
+    <div style="background:linear-gradient(135deg,#0b1120 0%,#0f2040 55%,#064e3b 100%);padding:32px 36px 28px;position:relative;overflow:hidden;">
+      <!-- decorative blobs -->
+      <div style="position:absolute;top:-40px;right:-40px;width:200px;height:200px;background:radial-gradient(circle,rgba(6,182,212,0.18) 0%,transparent 70%);pointer-events:none;"></div>
+      <div style="position:absolute;bottom:-30px;left:10%;width:160px;height:160px;background:radial-gradient(circle,rgba(16,185,129,0.14) 0%,transparent 70%);pointer-events:none;"></div>
+      <!-- content -->
+      <div style="position:relative;z-index:1;">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div style="background:rgba(6,182,212,0.15);border:1.5px solid rgba(6,182,212,0.4);border-radius:14px;padding:10px 14px;font-size:2em;line-height:1;">⚽</div>
+          <div>
+            <div style="font-size:0.7em;font-weight:600;color:#06b6d4;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">AD1739 · Live Dashboard</div>
+            <h1 style="margin:0;font-size:1.95em;font-weight:800;color:#f8fafc;letter-spacing:-0.5px;line-height:1.15;">FIFA 2026 World Cup<br><span style="color:#06b6d4;">New York City</span></h1>
+            <p style="margin:10px 0 0;color:#94a3b8;font-size:0.88em;letter-spacing:0.2px;">Live scores &nbsp;·&nbsp; Group standings &nbsp;·&nbsp; AI win predictions &nbsp;·&nbsp; NYC viewing spots</p>
+          </div>
+        </div>
       </div>
-      <p style="margin:6px 0 0;opacity:0.75;font-size:0.9em;letter-spacing:0.3px;">Live scores · Group standings · AI predictions · NYC viewing spots</p>
     </div>
     """)
 
     # ── Nav guide (clickable cards → jump to tab) ─────────────────────────────
     gr.HTML("""
-    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
-      <div onclick="document.querySelectorAll('.tab-nav button')[0].click()"
-           style="background:#eff6ff;border:1.5px solid #3b82f6;border-radius:12px;padding:12px 16px;flex:1;min-width:150px;cursor:pointer;transition:box-shadow 0.15s;"
-           onmouseover="this.style.boxShadow='0 4px 16px rgba(59,130,246,0.25)'" onmouseout="this.style.boxShadow='none'">
-        <div style="font-weight:700;color:#1d4ed8;font-size:0.95em;">🗓️ Today's Games</div>
-        <div style="font-size:0.75em;color:#475569;margin-top:3px;">Kickoff times, results & AI win predictions for today</div>
-      </div>
-      <div onclick="document.querySelectorAll('.tab-nav button')[1].click()"
-           style="background:#f0fdf4;border:1.5px solid #22c55e;border-radius:12px;padding:12px 16px;flex:1;min-width:150px;cursor:pointer;transition:box-shadow 0.15s;"
-           onmouseover="this.style.boxShadow='0 4px 16px rgba(34,197,94,0.25)'" onmouseout="this.style.boxShadow='none'">
-        <div style="font-weight:700;color:#15803d;font-size:0.95em;">📊 Group Standings</div>
-        <div style="font-size:0.75em;color:#475569;margin-top:3px;">Points table for all 12 groups with strength scores</div>
-      </div>
-      <div onclick="document.querySelectorAll('.tab-nav button')[2].click()"
-           style="background:#fef9c3;border:1.5px solid #eab308;border-radius:12px;padding:12px 16px;flex:1;min-width:150px;cursor:pointer;transition:box-shadow 0.15s;"
-           onmouseover="this.style.boxShadow='0 4px 16px rgba(234,179,8,0.25)'" onmouseout="this.style.boxShadow='none'">
-        <div style="font-weight:700;color:#854d0e;font-size:0.95em;">🏆 Predictions</div>
-        <div style="font-size:0.75em;color:#475569;margin-top:3px;">AI-ranked favourites based on goals, wins & form</div>
-      </div>
-      <div onclick="document.querySelectorAll('.tab-nav button')[3].click()"
-           style="background:#f5f3ff;border:1.5px solid #8b5cf6;border-radius:12px;padding:12px 16px;flex:1;min-width:150px;cursor:pointer;transition:box-shadow 0.15s;"
-           onmouseover="this.style.boxShadow='0 4px 16px rgba(139,92,246,0.25)'" onmouseout="this.style.boxShadow='none'">
-        <div style="font-weight:700;color:#6d28d9;font-size:0.95em;">📅 Full Schedule</div>
-        <div style="font-size:0.75em;color:#475569;margin-top:3px;">Color-coded bracket: R32 → R16 → QF → SF → Final</div>
-      </div>
-      <div onclick="document.querySelectorAll('.tab-nav button')[4].click()"
-           style="background:#fff1f2;border:1.5px solid #f43f5e;border-radius:12px;padding:12px 16px;flex:1;min-width:150px;cursor:pointer;transition:box-shadow 0.15s;"
-           onmouseover="this.style.boxShadow='0 4px 16px rgba(244,63,94,0.25)'" onmouseout="this.style.boxShadow='none'">
-        <div style="font-weight:700;color:#be123c;font-size:0.95em;">🗽 NYC Bars</div>
-        <div style="font-size:0.75em;color:#475569;margin-top:3px;">Where to watch every team in New York City</div>
+    <div style="background:#0b1120;padding:16px 20px 20px;">
+      <div style="font-size:0.7em;font-weight:600;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">Quick Navigation</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <div onclick="document.querySelectorAll('.tab-nav button')[0].click()"
+             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
+             onmouseover="this.style.borderColor='#06b6d4';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+          <div style="font-size:0.82em;font-weight:700;color:#06b6d4;">🗓️ Today's Games</div>
+          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Kickoffs & predictions</div>
+        </div>
+        <div onclick="document.querySelectorAll('.tab-nav button')[1].click()"
+             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
+             onmouseover="this.style.borderColor='#10b981';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+          <div style="font-size:0.82em;font-weight:700;color:#10b981;">📊 Group Standings</div>
+          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Points table · All groups</div>
+        </div>
+        <div onclick="document.querySelectorAll('.tab-nav button')[2].click()"
+             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
+             onmouseover="this.style.borderColor='#f59e0b';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+          <div style="font-size:0.82em;font-weight:700;color:#f59e0b;">🏆 Predictions</div>
+          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">AI-ranked favourites</div>
+        </div>
+        <div onclick="document.querySelectorAll('.tab-nav button')[3].click()"
+             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
+             onmouseover="this.style.borderColor='#a78bfa';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+          <div style="font-size:0.82em;font-weight:700;color:#a78bfa;">📅 Full Schedule</div>
+          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">R32 → R16 → QF → Final</div>
+        </div>
+        <div onclick="document.querySelectorAll('.tab-nav button')[4].click()"
+             style="background:#0f2040;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;cursor:pointer;transition:all 0.15s;color:white;"
+             onmouseover="this.style.borderColor='#f43f5e';this.style.background='#0c2a50';" onmouseout="this.style.borderColor='#1e3a5f';this.style.background='#0f2040';">
+          <div style="font-size:0.82em;font-weight:700;color:#f43f5e;">🗽 NYC Bars</div>
+          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Where to watch in NYC</div>
+        </div>
       </div>
     </div>
     """)
 
     # ── Search bar ────────────────────────────────────────────────────────────
-    gr.HTML("<div style='font-weight:600;color:#1e293b;margin-bottom:6px;'>🔍 Search teams, matches, venues, NYC bars</div>")
-    with gr.Row():
+    gr.HTML("<div style='padding:16px 20px 6px;'><div style='font-weight:600;color:#334155;font-size:0.88em;'>🔍 Search teams, matches, venues or NYC bars</div></div>")
+    with gr.Row(elem_id="search-row"):
         search_box = gr.Textbox(
             placeholder="e.g. France, MetLife Stadium, South Africa, Astoria...",
             label="", scale=5, container=False,
@@ -510,7 +533,7 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
     search_btn.click(fn=do_search, inputs=[search_box, current_email], outputs=search_results)
     search_box.submit(fn=do_search, inputs=[search_box, current_email], outputs=search_results)
 
-    gr.HTML("<hr style='margin:14px 0;border-color:#e2e8f0;'/>")
+    gr.HTML("<div style='height:1px;background:#e2e8f0;margin:8px 0;'></div>")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
     with gr.Tabs():
@@ -523,50 +546,55 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
                     include_time=False,
                 )
                 load_btn = gr.Button("🔄 Load Games", variant="primary", scale=0)
-            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>Dates shown in Eastern Time (ET). Use the picker to browse past or future games.</p>")
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 10px;'>All times Eastern (ET). Browse past or future dates with the picker.</p>")
             games_html = gr.HTML()
             load_btn.click(fn=load_games, inputs=date_input, outputs=games_html)
             app.load(fn=lambda: load_games(today_et()), outputs=games_html)
 
         with gr.TabItem("📊 Group Standings"):
-            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>🟩 Green = 1st place · 🟦 Blue = 2nd place · White = 3rd/4th. Strength score predicts knockout performance.</p>")
-            standings_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 10px;'>🟩 1st place &nbsp;·&nbsp; 🟦 2nd place &nbsp;·&nbsp; White = eliminated. Strength score drives knockout predictions.</p>")
+            standings_btn = gr.Button("🔄 Refresh Standings", variant="primary", scale=0)
             standings_html = gr.HTML()
             standings_btn.click(fn=load_standings, outputs=standings_html)
             app.load(fn=load_standings, outputs=standings_html)
 
         with gr.TabItem("🏆 Predictions"):
-            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>Teams ranked by Strength Score = 45% win rate + 30% goals/game + 15% defense + 10% pts efficiency. Updated from live standings.</p>")
-            pred_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 10px;'>Strength Score = 45% win rate + 30% goals/game + 15% defense + 10% points efficiency.</p>")
+            pred_btn = gr.Button("🔄 Refresh Predictions", variant="primary", scale=0)
             pred_html = gr.HTML()
             pred_btn.click(fn=load_predictions, outputs=pred_html)
             app.load(fn=load_predictions, outputs=pred_html)
 
         with gr.TabItem("📅 Full Schedule"):
-            gr.HTML("""<div style='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:0.8em;'>
-              <span style='background:#1d4ed8;color:white;padding:2px 10px;border-radius:10px;'>■ Round of 32</span>
-              <span style='background:#15803d;color:white;padding:2px 10px;border-radius:10px;'>■ Round of 16</span>
-              <span style='background:#854d0e;color:white;padding:2px 10px;border-radius:10px;'>■ Quarterfinal</span>
-              <span style='background:#92400e;color:white;padding:2px 10px;border-radius:10px;'>■ Semifinal</span>
-              <span style='background:#475569;color:white;padding:2px 10px;border-radius:10px;'>■ Third Place</span>
-              <span style='background:#991b1b;color:white;padding:2px 10px;border-radius:10px;'>■ 🏆 Final</span>
-              <span style='background:#ef4444;color:white;padding:2px 10px;border-radius:10px;'>🔴 Today</span>
+            gr.HTML("""<div style='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;font-size:0.78em;align-items:center;'>
+              <span style='color:#64748b;font-weight:600;margin-right:4px;'>Legend:</span>
+              <span style='background:#1d4ed8;color:white;padding:3px 10px;border-radius:20px;font-weight:600;'>R32</span>
+              <span style='background:#15803d;color:white;padding:3px 10px;border-radius:20px;font-weight:600;'>R16</span>
+              <span style='background:#92400e;color:white;padding:3px 10px;border-radius:20px;font-weight:600;'>QF</span>
+              <span style='background:#7c2d12;color:white;padding:3px 10px;border-radius:20px;font-weight:600;'>SF</span>
+              <span style='background:#475569;color:white;padding:3px 10px;border-radius:20px;font-weight:600;'>3rd</span>
+              <span style='background:#991b1b;color:white;padding:3px 10px;border-radius:20px;font-weight:600;'>🏆 Final</span>
+              <span style='background:#ef4444;color:white;padding:3px 10px;border-radius:20px;font-weight:600;'>🔴 Today</span>
             </div>""")
-            sched_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
+            sched_btn = gr.Button("🔄 Refresh Schedule", variant="primary", scale=0)
             sched_html = gr.HTML()
             sched_btn.click(fn=load_schedule, outputs=sched_html)
             app.load(fn=load_schedule, outputs=sched_html)
 
         with gr.TabItem("🗽 NYC Bars"):
-            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>🔵 Blue border = dedicated supporter bar · Grey = use a multi-nation soccer bar.</p>")
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 10px;'>🔵 Blue border = dedicated supporter bar &nbsp;·&nbsp; Grey = multi-nation soccer bar. Always confirm with the venue.</p>")
             bars_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
             bars_html_out = gr.HTML()
             bars_btn.click(fn=load_bars, outputs=bars_html_out)
             app.load(fn=load_bars, outputs=bars_html_out)
 
     # ── Subscribe (bottom) ────────────────────────────────────────────────────
-    gr.HTML("<hr style='margin:24px 0 16px;border-color:#e2e8f0;'/>")
-    gr.HTML("<div style='font-weight:600;color:#1e293b;margin-bottom:6px;'>📬 Get daily FIFA 2026 match alerts & predictions</div>")
+    gr.HTML("""
+    <div style="margin:8px 20px 0;padding:20px 24px;background:linear-gradient(135deg,#0b1120,#0f2040);border-radius:14px;">
+      <div style="color:#f8fafc;font-weight:700;font-size:1em;margin-bottom:4px;">📬 Get daily match alerts & predictions</div>
+      <div style="color:#64748b;font-size:0.8em;margin-bottom:12px;">Stay updated on today's games, results, and tournament picks.</div>
+    </div>
+    """)
     with gr.Row():
         email_name = gr.Textbox(placeholder="Your name (optional)", label="", scale=1, container=False)
         email_input = gr.Textbox(placeholder="Your email address", label="", scale=2, container=False)
@@ -584,15 +612,15 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
 
     # ── Footer / Disclaimer ───────────────────────────────────────────────────
     gr.HTML("""
-    <div style="margin-top:28px;padding:20px 24px;background:#f8fafc;border-radius:14px;border:1px solid #e2e8f0;font-size:0.78em;color:#64748b;line-height:1.7;">
-      <div style="font-weight:700;color:#334155;margin-bottom:8px;font-size:0.9em;text-transform:uppercase;letter-spacing:0.5px;">Disclaimer</div>
-      <p style="margin:0 0 6px;">This dashboard is an independent fan project for informational and entertainment purposes only.
-      Match schedules, results, and standings are sourced from publicly available FIFA 2026 data and may not reflect real-time updates.
-      Win predictions are generated by an algorithmic model based on group stage performance and do not constitute professional sports analysis or betting advice.</p>
-      <p style="margin:0;">NYC bar listings are community-sourced and subject to change — always verify directly with the venue.</p>
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-        <span style="font-weight:700;color:#1d4ed8;font-size:0.95em;">© 2026 AD1739</span>
-        <span style="color:#94a3b8;">FIFA 2026 · Data updated June 2026</span>
+    <div style="margin:20px 20px 20px;padding:18px 22px;background:#f1f5f9;border-radius:12px;border:1px solid #e2e8f0;font-size:0.76em;color:#64748b;line-height:1.7;">
+      <div style="font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.8px;font-size:0.85em;">Disclaimer</div>
+      <p style="margin:0 0 5px;">This is an independent fan dashboard for informational and entertainment purposes only.
+      Data is sourced from publicly available FIFA 2026 records and may not reflect real-time updates.
+      Win predictions are algorithmic estimates — not professional sports analysis or betting advice.</p>
+      <p style="margin:0;">NYC bar listings are community-sourced; always verify with the venue directly.</p>
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+        <span style="font-weight:700;color:#0b1120;font-size:0.95em;">© 2026 AD1739</span>
+        <span style="color:#94a3b8;">FIFA World Cup 2026 · Data updated June 2026</span>
       </div>
     </div>
     """)
