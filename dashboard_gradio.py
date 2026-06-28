@@ -618,27 +618,32 @@ footer { display: none !important; }
 [data-nav-idx] { cursor: pointer; }
 """
 
-# JS injected once at page load — wires nav cards to tab buttons
+# JS wires nav cards → tab buttons. Uses onclick= (idempotent) + retries.
 NAV_JS = """
 function() {
+  function getTabs() {
+    var t = Array.from(document.querySelectorAll('button[role=tab]'));
+    if (!t.length) t = Array.from(document.querySelectorAll('.tab-nav button'));
+    if (!t.length) t = Array.from(document.querySelectorAll('.tabs button'));
+    return t;
+  }
   function wire() {
     var cards = document.querySelectorAll('[data-nav-idx]');
-    var tabs  = document.querySelectorAll('button[role=tab]');
-    if (!tabs.length) tabs = document.querySelectorAll('.tab-nav button');
-    if (!cards.length || !tabs.length) { setTimeout(wire, 500); return; }
+    var tabs  = getTabs();
+    if (!cards.length || !tabs.length) { setTimeout(wire, 600); return; }
     cards.forEach(function(card) {
-      card.addEventListener('click', function() {
-        var idx = parseInt(card.getAttribute('data-nav-idx'), 10);
-        if (tabs[idx]) { tabs[idx].click(); tabs[idx].scrollIntoView({behavior:'smooth',block:'nearest'}); }
-      });
-      card.addEventListener('mouseover', function() {
-        card.style.transform = 'translateY(-2px)';
-        card.style.transition = 'transform 0.15s';
-      });
-      card.addEventListener('mouseout', function() { card.style.transform = ''; });
+      var idx = parseInt(card.getAttribute('data-nav-idx'), 10);
+      card.onclick = function(e) {
+        e.preventDefault();
+        var t = getTabs();
+        if (t[idx]) t[idx].click();
+      };
     });
   }
-  setTimeout(wire, 900);
+  wire();
+  setTimeout(wire, 800);
+  setTimeout(wire, 2000);
+  setTimeout(wire, 5000);
 }
 """
 
@@ -665,40 +670,6 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS, js=NAV_JS) as app:
     </div>
     """)
 
-    # ── Nav guide (data-nav-idx wired by NAV_JS at page load) ────────────────
-    gr.HTML("""
-    <div style="background:#0b1120;padding:16px 20px 20px;">
-      <div style="font-size:0.7em;font-weight:600;color:#475569;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;">Click to Navigate</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        <div data-nav-idx="0"
-             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
-          <div style="font-size:0.82em;font-weight:700;color:#06b6d4;">🗓️ Today's Games</div>
-          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Kickoffs &amp; predictions</div>
-        </div>
-        <div data-nav-idx="1"
-             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
-          <div style="font-size:0.82em;font-weight:700;color:#10b981;">📊 Group Standings</div>
-          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Points table · All groups</div>
-        </div>
-        <div data-nav-idx="2"
-             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
-          <div style="font-size:0.82em;font-weight:700;color:#f59e0b;">🏆 Predictions</div>
-          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">AI-ranked favourites</div>
-        </div>
-        <div data-nav-idx="3"
-             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
-          <div style="font-size:0.82em;font-weight:700;color:#a78bfa;">📅 Full Schedule</div>
-          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">R32 → R16 → QF → Final</div>
-        </div>
-        <div data-nav-idx="4"
-             style="background:#0f2040;border:1.5px solid #1e3a5f;border-radius:10px;padding:10px 14px;flex:1;min-width:130px;user-select:none;">
-          <div style="font-size:0.82em;font-weight:700;color:#f43f5e;">🗽 NYC Bars</div>
-          <div style="font-size:0.7em;color:#64748b;margin-top:2px;">Where to watch in NYC</div>
-        </div>
-      </div>
-    </div>
-    """)
-
     # ── Search bar ────────────────────────────────────────────────────────────
     gr.HTML("<div style='padding:16px 20px 6px;'><div style='font-weight:600;color:#334155;font-size:0.88em;'>🔍 Search teams, matches, venues or NYC bars</div></div>")
     with gr.Row(elem_id="search-row"):
@@ -712,6 +683,45 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS, js=NAV_JS) as app:
     search_box.submit(fn=do_search, inputs=[search_box, current_email], outputs=search_results)
 
     gr.HTML("<div style='height:1px;background:#e2e8f0;margin:8px 0;'></div>")
+
+    # ── Nav cards — sit directly above tabs, wired by NAV_JS ─────────────────
+    gr.HTML("""
+    <div style="padding:12px 20px 0;background:#f8fafc;">
+      <div style="font-size:0.68em;font-weight:700;color:#94a3b8;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">Jump to section</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        <div data-nav-idx="0"
+             style="background:#0b1120;border:1.5px solid #1e3a5f;border-radius:8px 8px 0 0;padding:8px 14px;flex:1;min-width:110px;cursor:pointer;user-select:none;transition:border-color 0.15s;"
+             onmouseenter="this.style.borderColor='#06b6d4'" onmouseleave="this.style.borderColor='#1e3a5f'">
+          <div style="font-size:0.8em;font-weight:700;color:#06b6d4;">🗓️ Today's Games</div>
+          <div style="font-size:0.68em;color:#64748b;margin-top:1px;">Kickoffs &amp; predictions</div>
+        </div>
+        <div data-nav-idx="1"
+             style="background:#0b1120;border:1.5px solid #1e3a5f;border-radius:8px 8px 0 0;padding:8px 14px;flex:1;min-width:110px;cursor:pointer;user-select:none;transition:border-color 0.15s;"
+             onmouseenter="this.style.borderColor='#10b981'" onmouseleave="this.style.borderColor='#1e3a5f'">
+          <div style="font-size:0.8em;font-weight:700;color:#10b981;">📊 Standings</div>
+          <div style="font-size:0.68em;color:#64748b;margin-top:1px;">All 12 groups</div>
+        </div>
+        <div data-nav-idx="2"
+             style="background:#0b1120;border:1.5px solid #1e3a5f;border-radius:8px 8px 0 0;padding:8px 14px;flex:1;min-width:110px;cursor:pointer;user-select:none;transition:border-color 0.15s;"
+             onmouseenter="this.style.borderColor='#f59e0b'" onmouseleave="this.style.borderColor='#1e3a5f'">
+          <div style="font-size:0.8em;font-weight:700;color:#f59e0b;">🏆 Predictions</div>
+          <div style="font-size:0.68em;color:#64748b;margin-top:1px;">AI-ranked favourites</div>
+        </div>
+        <div data-nav-idx="3"
+             style="background:#0b1120;border:1.5px solid #1e3a5f;border-radius:8px 8px 0 0;padding:8px 14px;flex:1;min-width:110px;cursor:pointer;user-select:none;transition:border-color 0.15s;"
+             onmouseenter="this.style.borderColor='#a78bfa'" onmouseleave="this.style.borderColor='#1e3a5f'">
+          <div style="font-size:0.8em;font-weight:700;color:#a78bfa;">📅 Schedule</div>
+          <div style="font-size:0.68em;color:#64748b;margin-top:1px;">R32 → Final bracket</div>
+        </div>
+        <div data-nav-idx="4"
+             style="background:#0b1120;border:1.5px solid #1e3a5f;border-radius:8px 8px 0 0;padding:8px 14px;flex:1;min-width:110px;cursor:pointer;user-select:none;transition:border-color 0.15s;"
+             onmouseenter="this.style.borderColor='#f43f5e'" onmouseleave="this.style.borderColor='#1e3a5f'">
+          <div style="font-size:0.8em;font-weight:700;color:#f43f5e;">🗽 NYC Bars</div>
+          <div style="font-size:0.68em;color:#64748b;margin-top:1px;">Where to watch</div>
+        </div>
+      </div>
+    </div>
+    """)
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
     with gr.Tabs():
