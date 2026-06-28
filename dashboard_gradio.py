@@ -2,6 +2,7 @@
 
 import os
 import re
+import zoneinfo
 from datetime import date, datetime, timezone
 
 import gradio as gr
@@ -261,27 +262,43 @@ def predictions_html(qualified: pd.DataFrame) -> str:
 
 
 # ── schedule HTML ─────────────────────────────────────────────────────────────
+ROUND_STYLES = {
+    "Round of 32":  {"bg": "#eff6ff", "border": "#3b82f6", "badge": "#1d4ed8", "label": "R32"},
+    "Round of 16":  {"bg": "#f0fdf4", "border": "#22c55e", "badge": "#15803d", "label": "R16"},
+    "Quarterfinal": {"bg": "#fef9c3", "border": "#eab308", "badge": "#854d0e", "label": "QF"},
+    "Semifinal":    {"bg": "#fef3c7", "border": "#f59e0b", "badge": "#92400e", "label": "SF"},
+    "Third place":  {"bg": "#f1f5f9", "border": "#94a3b8", "badge": "#475569", "label": "3rd"},
+    "Final":        {"bg": "#fff1f2", "border": "#ef4444", "badge": "#991b1b", "label": "🏆 FINAL"},
+}
+
 def schedule_html(ko: pd.DataFrame) -> str:
     ko = ko.copy()
     ko["match_date"] = pd.to_datetime(ko["match_date"], errors="coerce")
     ko = ko.sort_values("match_date")
-    today = date.today()
+    et = zoneinfo.ZoneInfo("America/New_York")
+    today = datetime.now(et).date()
 
     html = ""
     current_round = None
     for _, r in ko.iterrows():
         rnd = str(r.get("stage", r.get("round", "")))
+        style = next((v for k, v in ROUND_STYLES.items() if k.lower() in rnd.lower()), {"bg": "white", "border": "#e2e8f0", "badge": "#64748b", "label": rnd[:4]})
         if rnd != current_round:
             current_round = rnd
-            html += f"<h3 style='margin:18px 0 8px;color:#1e293b;border-bottom:2px solid #3b82f6;padding-bottom:4px;'>{rnd}</h3>"
+            html += f"""
+            <div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;">
+              <span style="background:{style['badge']};color:white;padding:4px 14px;border-radius:20px;font-weight:700;font-size:0.9em;">{rnd}</span>
+              <div style="flex:1;height:2px;background:{style['border']};opacity:0.4;"></div>
+            </div>"""
         d = r["match_date"]
         is_today = hasattr(d, "date") and d.date() == today
-        bg = "#eff6ff" if is_today else "white"
-        border = "#3b82f6" if is_today else "#e2e8f0"
-        today_tag = " 🔴 TODAY" if is_today else ""
+        bg = style["bg"] if not is_today else "#fef2f2"
+        border = "#ef4444" if is_today else style["border"]
+        today_tag = " 🔴 <b>TODAY</b>" if is_today else ""
         date_str = d.strftime("%a, %b %d") if pd.notna(d) else "TBD"
         html += f"""
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;margin:4px 0;background:{bg};border:1px solid {border};border-radius:8px;">
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;margin:3px 0;background:{bg};border:1px solid {border};border-radius:8px;">
+          <span style="background:{style['badge']};color:white;padding:1px 8px;border-radius:8px;font-size:0.72em;font-weight:700;min-width:32px;text-align:center;">{style['label']}</span>
           <span style="min-width:110px;font-size:0.85em;color:#64748b;">{date_str}{today_tag}</span>
           <span style="font-weight:600;flex:1;">{r.get('matchup','TBD')}</span>
           <span style="font-size:0.82em;color:#64748b;">{r.get('kickoff_et','')}</span>
@@ -309,8 +326,14 @@ def bars_html(bars: pd.DataFrame) -> str:
 
 
 # ── data loaders ──────────────────────────────────────────────────────────────
+def today_et() -> date:
+    return datetime.now(zoneinfo.ZoneInfo("America/New_York")).date()
+
+
 def load_games(view_date):
-    if isinstance(view_date, str):
+    if not view_date or str(view_date).strip() in ("", "None"):
+        view_date = today_et()
+    elif isinstance(view_date, str):
         view_date = date.fromisoformat(str(view_date)[:10])
     elif hasattr(view_date, "date"):
         view_date = view_date.date()
@@ -421,95 +444,144 @@ def load_bars():
 CSS = """
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 .gradio-container { max-width: 1100px !important; }
+.tab-nav button { font-size: 0.95em !important; font-weight: 600 !important; padding: 10px 16px !important; }
 """
 
 with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
-    # shared state: logged-in email
     current_email = gr.State("")
 
+    # ── Header ────────────────────────────────────────────────────────────────
     gr.HTML("""
-    <div style="background:linear-gradient(135deg,#1d4ed8,#059669);padding:24px 28px;border-radius:14px;margin-bottom:16px;color:white;">
+    <div style="background:linear-gradient(135deg,#1d4ed8,#059669);padding:24px 28px;border-radius:14px;margin-bottom:12px;color:white;">
       <h1 style="margin:0;font-size:1.8em;">⚽ FIFA 2026 World Cup · NYC Dashboard</h1>
-      <p style="margin:6px 0 0;opacity:0.85;">Live scores · Group standings · AI win predictions · NYC viewing spots</p>
+      <p style="margin:6px 0 0;opacity:0.85;">by <b>AD1739</b> · Anusha Dandapani · NYU MSBA 2026</p>
     </div>
     """)
 
-    # ── Email capture ─────────────────────────────────────────────────────────
-    with gr.Group():
-        gr.HTML("<div style='font-weight:600;color:#1e293b;margin-bottom:6px;'>📬 Subscribe for daily FIFA updates</div>")
-        with gr.Row():
-            email_name = gr.Textbox(placeholder="Your name (optional)", label="", scale=1, container=False)
-            email_input = gr.Textbox(placeholder="Your email address", label="", scale=2, container=False)
-            email_btn = gr.Button("Subscribe →", variant="primary", scale=0)
-        email_status = gr.HTML()
-
-    def on_subscribe(name, email):
-        msg = save_email(name, email)
-        saved = email if "✅" in msg else ""
-        status_html = f"<div style='padding:8px 12px;border-radius:8px;background:{'#f0fdf4' if '✅' in msg else '#fff7ed'};color:{'#15803d' if '✅' in msg else '#b45309'};font-weight:500;margin-top:4px;'>{msg}</div>"
-        return status_html, saved
-
-    email_btn.click(fn=on_subscribe, inputs=[email_name, email_input], outputs=[email_status, current_email])
+    # ── Nav guide ────────────────────────────────────────────────────────────
+    gr.HTML("""
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+      <div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:10px;padding:8px 14px;flex:1;min-width:140px;">
+        <div style="font-weight:700;color:#1d4ed8;">🗓️ Today's Games</div>
+        <div style="font-size:0.78em;color:#475569;margin-top:2px;">Live scores, kickoff times & AI win predictions for today</div>
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #22c55e;border-radius:10px;padding:8px 14px;flex:1;min-width:140px;">
+        <div style="font-weight:700;color:#15803d;">📊 Group Standings</div>
+        <div style="font-size:0.78em;color:#475569;margin-top:2px;">Points table for all 12 groups with strength scores</div>
+      </div>
+      <div style="background:#fef9c3;border:1px solid #eab308;border-radius:10px;padding:8px 14px;flex:1;min-width:140px;">
+        <div style="font-weight:700;color:#854d0e;">🏆 Predictions</div>
+        <div style="font-size:0.78em;color:#475569;margin-top:2px;">AI-ranked tournament favourites based on goals & wins</div>
+      </div>
+      <div style="background:#f5f3ff;border:1px solid #8b5cf6;border-radius:10px;padding:8px 14px;flex:1;min-width:140px;">
+        <div style="font-weight:700;color:#6d28d9;">📅 Full Schedule</div>
+        <div style="font-size:0.78em;color:#475569;margin-top:2px;">Color-coded bracket: R32 → R16 → QF → SF → Final</div>
+      </div>
+      <div style="background:#fff1f2;border:1px solid #f43f5e;border-radius:10px;padding:8px 14px;flex:1;min-width:140px;">
+        <div style="font-weight:700;color:#be123c;">🗽 NYC Bars</div>
+        <div style="font-size:0.78em;color:#475569;margin-top:2px;">Where to watch every team in New York City</div>
+      </div>
+    </div>
+    """)
 
     # ── Search bar ────────────────────────────────────────────────────────────
-    gr.HTML("<div style='margin:16px 0 6px;font-weight:600;color:#1e293b;'>🔍 Search teams, matches, venues, NYC bars</div>")
+    gr.HTML("<div style='font-weight:600;color:#1e293b;margin-bottom:6px;'>🔍 Search teams, matches, venues, NYC bars</div>")
     with gr.Row():
         search_box = gr.Textbox(
-            placeholder="e.g. France, MetLife Stadium, South Africa, Jackson Heights...",
+            placeholder="e.g. France, MetLife Stadium, South Africa, Astoria...",
             label="", scale=5, container=False,
         )
         search_btn = gr.Button("Search", variant="secondary", scale=0)
     search_results = gr.HTML()
-
     search_btn.click(fn=do_search, inputs=[search_box, current_email], outputs=search_results)
     search_box.submit(fn=do_search, inputs=[search_box, current_email], outputs=search_results)
 
-    gr.HTML("<hr style='margin:16px 0;border-color:#e2e8f0;'/>")
+    gr.HTML("<hr style='margin:14px 0;border-color:#e2e8f0;'/>")
 
+    # ── Tabs ──────────────────────────────────────────────────────────────────
     with gr.Tabs():
 
-        # ── Tab 1: Today's Games ──────────────────────────────────────────────
         with gr.TabItem("🗓️ Today's Games"):
             with gr.Row():
                 date_input = gr.DateTime(
-                    label="Select date",
-                    value=str(date.today()),
+                    label="Select date (ET)",
+                    value=str(today_et()),
                     include_time=False,
                 )
                 load_btn = gr.Button("🔄 Load Games", variant="primary", scale=0)
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>Dates shown in Eastern Time (ET). Use the picker to browse past or future games.</p>")
             games_html = gr.HTML()
             load_btn.click(fn=load_games, inputs=date_input, outputs=games_html)
-            app.load(fn=lambda: load_games(date.today()), outputs=games_html)
+            app.load(fn=lambda: load_games(today_et()), outputs=games_html)
 
-        # ── Tab 2: Standings ──────────────────────────────────────────────────
         with gr.TabItem("📊 Group Standings"):
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>🟩 Green = 1st place · 🟦 Blue = 2nd place · White = 3rd/4th. Strength score predicts knockout performance.</p>")
             standings_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
             standings_html = gr.HTML()
             standings_btn.click(fn=load_standings, outputs=standings_html)
             app.load(fn=load_standings, outputs=standings_html)
 
-        # ── Tab 3: Predictions ────────────────────────────────────────────────
         with gr.TabItem("🏆 Predictions"):
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>Teams ranked by Strength Score = 45% win rate + 30% goals/game + 15% defense + 10% pts efficiency. Updated from live standings.</p>")
             pred_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
             pred_html = gr.HTML()
             pred_btn.click(fn=load_predictions, outputs=pred_html)
             app.load(fn=load_predictions, outputs=pred_html)
 
-        # ── Tab 4: Full Schedule ──────────────────────────────────────────────
         with gr.TabItem("📅 Full Schedule"):
+            gr.HTML("""<div style='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:0.8em;'>
+              <span style='background:#1d4ed8;color:white;padding:2px 10px;border-radius:10px;'>■ Round of 32</span>
+              <span style='background:#15803d;color:white;padding:2px 10px;border-radius:10px;'>■ Round of 16</span>
+              <span style='background:#854d0e;color:white;padding:2px 10px;border-radius:10px;'>■ Quarterfinal</span>
+              <span style='background:#92400e;color:white;padding:2px 10px;border-radius:10px;'>■ Semifinal</span>
+              <span style='background:#475569;color:white;padding:2px 10px;border-radius:10px;'>■ Third Place</span>
+              <span style='background:#991b1b;color:white;padding:2px 10px;border-radius:10px;'>■ 🏆 Final</span>
+              <span style='background:#ef4444;color:white;padding:2px 10px;border-radius:10px;'>🔴 Today</span>
+            </div>""")
             sched_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
             sched_html = gr.HTML()
             sched_btn.click(fn=load_schedule, outputs=sched_html)
             app.load(fn=load_schedule, outputs=sched_html)
 
-        # ── Tab 5: NYC Bars ───────────────────────────────────────────────────
         with gr.TabItem("🗽 NYC Bars"):
+            gr.HTML("<p style='color:#64748b;font-size:0.82em;margin:0 0 8px;'>🔵 Blue border = dedicated supporter bar · Grey = use a multi-nation soccer bar.</p>")
             bars_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
             bars_html_out = gr.HTML()
             bars_btn.click(fn=load_bars, outputs=bars_html_out)
             app.load(fn=load_bars, outputs=bars_html_out)
 
-    gr.HTML("<div style='text-align:center;color:#94a3b8;font-size:0.8em;margin-top:12px;'>📡 Live data from BigQuery · proud-sweep-323918.fifa_2026 · Refreshes on page load</div>")
+    # ── Subscribe (bottom) ────────────────────────────────────────────────────
+    gr.HTML("<hr style='margin:24px 0 16px;border-color:#e2e8f0;'/>")
+    gr.HTML("<div style='font-weight:600;color:#1e293b;margin-bottom:6px;'>📬 Get daily FIFA 2026 match alerts & predictions</div>")
+    with gr.Row():
+        email_name = gr.Textbox(placeholder="Your name (optional)", label="", scale=1, container=False)
+        email_input = gr.Textbox(placeholder="Your email address", label="", scale=2, container=False)
+        email_btn = gr.Button("Subscribe →", variant="primary", scale=0)
+    email_status = gr.HTML()
+
+    def on_subscribe(name, email):
+        msg = save_email(name, email)
+        saved = email if "✅" in msg else ""
+        bg = "#f0fdf4" if "✅" in msg else "#fff7ed"
+        color = "#15803d" if "✅" in msg else "#b45309"
+        return f"<div style='padding:8px 12px;border-radius:8px;background:{bg};color:{color};font-weight:500;margin-top:4px;'>{msg}</div>", saved
+
+    email_btn.click(fn=on_subscribe, inputs=[email_name, email_input], outputs=[email_status, current_email])
+
+    # ── Footer / Disclaimer ───────────────────────────────────────────────────
+    gr.HTML("""
+    <div style="margin-top:24px;padding:16px 20px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;font-size:0.78em;color:#64748b;line-height:1.6;">
+      <div style="font-weight:700;color:#334155;margin-bottom:6px;">⚠️ Disclaimer</div>
+      <p style="margin:0 0 6px;">This dashboard is an independent fan project created for informational and entertainment purposes only.
+      Match schedules, results, and standings are sourced from publicly available FIFA 2026 data and may not reflect real-time updates.
+      Win predictions are generated by an algorithmic model based on historical group stage performance and do not constitute professional sports analysis or betting advice.</p>
+      <p style="margin:0;">NYC bar listings are community-sourced and subject to change. Always verify directly with the venue.</p>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+        <span>© 2026 <b>AD1739</b> · Anusha Dandapani · NYU Stern MSBA</span>
+        <span>Built with Python · Data: FIFA 2026 Official Schedule · Updated June 27, 2026</span>
+      </div>
+    </div>
+    """)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
