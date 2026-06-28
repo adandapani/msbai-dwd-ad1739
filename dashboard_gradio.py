@@ -1,7 +1,8 @@
 """FIFA 2026 World Cup Dashboard — Gradio version with BigQuery backend."""
 
 import os
-from datetime import date
+import re
+from datetime import date, datetime, timezone
 
 import gradio as gr
 import pandas as pd
@@ -40,6 +41,101 @@ def get_client():
 def load_table(table: str) -> pd.DataFrame:
     client = get_client()
     return client.query(f"SELECT * FROM `{PROJECT_ID}.{DATASET}.{table}`").to_dataframe()
+
+
+# ── email capture ─────────────────────────────────────────────────────────────
+def save_email(name: str, email: str) -> str:
+    name = (name or "").strip()
+    email = (email or "").strip().lower()
+    if not email or not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
+        return "⚠️ Please enter a valid email address."
+    try:
+        client = get_client()
+        client.query(f"""
+            INSERT INTO `{PROJECT_ID}.{DATASET}.email_leads` (email, name, submitted_at, user_agent)
+            VALUES ('{email.replace("'","")}', '{name.replace("'","")}', CURRENT_TIMESTAMP(), 'web')
+        """).result()
+        return f"✅ Thanks {name or 'there'}! You're subscribed for FIFA 2026 updates."
+    except Exception as e:
+        return f"❌ Could not save: {e}"
+
+
+# ── search ────────────────────────────────────────────────────────────────────
+def do_search(query: str, user_email: str = "") -> str:
+    query = (query or "").strip()
+    if not query or len(query) < 2:
+        return "<p style='color:#94a3b8;padding:12px;'>Type at least 2 characters to search.</p>"
+
+    q = query.lower()
+    results = []
+
+    try:
+        gs = load_table("group_stage_matches")
+        ko = load_table("knockout_matches")
+        standings = load_table("team_standings")
+        bars = load_table("nyc_bars")
+
+        # Search group stage matches
+        for _, r in gs.iterrows():
+            matchup = str(r.get("matchup", ""))
+            venue = str(r.get("venue", ""))
+            host = str(r.get("host_city", ""))
+            if q in matchup.lower() or q in venue.lower() or q in host.lower():
+                result_str = f" — Result: <b>{r['result']}</b>" if str(r.get("result", "")) not in ("", "nan") else ""
+                results.append(("⚽ Match", f"{matchup}{result_str}", f"{r.get('match_date','')} · {r.get('kickoff_et','')} ET · {venue}"))
+
+        # Search knockout matches
+        for _, r in ko.iterrows():
+            matchup = str(r.get("matchup", ""))
+            venue = str(r.get("venue", ""))
+            host = str(r.get("host_city", ""))
+            if q in matchup.lower() or q in venue.lower() or q in host.lower():
+                results.append(("🏆 Knockout", matchup, f"{r.get('match_date','')} · {r.get('kickoff_et','')} ET · {r.get('stage','')} · {venue}"))
+
+        # Search standings
+        for _, r in standings.iterrows():
+            if q in str(r.get("team", "")).lower():
+                s = float(r["strength_score"])
+                results.append(("📊 Team", str(r["team"]),
+                    f"Group {r['group_letter']} · {r['points']} pts · {r['won']}W/{r['drawn']}D/{r['lost']}L · {r['goals_for']} goals · Strength: {s:.3f} · {r['status']}"))
+
+        # Search NYC bars
+        for _, r in bars.iterrows():
+            country = str(r.get("country", ""))
+            spots = str(r.get("nyc_bars", ""))
+            if q in country.lower() or q in spots.lower():
+                results.append(("🗽 NYC Bar", country, spots))
+
+        # Log search to BigQuery
+        try:
+            client = get_client()
+            safe_q = query.replace("'", "")
+            safe_email = (user_email or "").replace("'", "")
+            client.query(f"""
+                INSERT INTO `{PROJECT_ID}.{DATASET}.search_logs` (query, result_count, searched_at, user_email)
+                VALUES ('{safe_q}', {len(results)}, CURRENT_TIMESTAMP(), '{safe_email}')
+            """).result()
+        except Exception:
+            pass
+
+    except Exception as e:
+        return f"<p style='color:red;'>Search error: {e}</p>"
+
+    if not results:
+        return f"<div style='padding:16px;color:#64748b;'>No results found for <b>\"{query}\"</b>. Try a team name, country, venue, or city.</div>"
+
+    html = f"<div style='margin-bottom:12px;color:#64748b;font-size:0.9em;'><b>{len(results)}</b> result(s) for <b>\"{query}\"</b></div>"
+    for tag, title, detail in results[:20]:
+        tag_color = {"⚽ Match": "#dbeafe", "🏆 Knockout": "#fef3c7", "📊 Team": "#dcfce7", "🗽 NYC Bar": "#fce7f3"}.get(tag, "#f1f5f9")
+        html += f"""
+        <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;margin-bottom:8px;background:white;">
+          <span style="background:{tag_color};padding:2px 10px;border-radius:12px;font-size:0.78em;font-weight:600;">{tag}</span>
+          <div style="font-weight:700;margin:6px 0 2px;color:#1e293b;">{title}</div>
+          <div style="font-size:0.83em;color:#64748b;">{detail}</div>
+        </div>"""
+    if len(results) > 20:
+        html += f"<div style='color:#94a3b8;font-size:0.85em;padding:8px;'>... and {len(results)-20} more results. Refine your search.</div>"
+    return html
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -323,12 +419,47 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 """
 
 with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
+    # shared state: logged-in email
+    current_email = gr.State("")
+
     gr.HTML("""
     <div style="background:linear-gradient(135deg,#1d4ed8,#059669);padding:24px 28px;border-radius:14px;margin-bottom:16px;color:white;">
       <h1 style="margin:0;font-size:1.8em;">⚽ FIFA 2026 World Cup · NYC Dashboard</h1>
       <p style="margin:6px 0 0;opacity:0.85;">Live scores · Group standings · AI win predictions · NYC viewing spots</p>
     </div>
     """)
+
+    # ── Email capture ─────────────────────────────────────────────────────────
+    with gr.Group():
+        gr.HTML("<div style='font-weight:600;color:#1e293b;margin-bottom:6px;'>📬 Subscribe for daily FIFA updates</div>")
+        with gr.Row():
+            email_name = gr.Textbox(placeholder="Your name (optional)", label="", scale=1, container=False)
+            email_input = gr.Textbox(placeholder="Your email address", label="", scale=2, container=False)
+            email_btn = gr.Button("Subscribe →", variant="primary", scale=0)
+        email_status = gr.HTML()
+
+    def on_subscribe(name, email):
+        msg = save_email(name, email)
+        saved = email if "✅" in msg else ""
+        status_html = f"<div style='padding:8px 12px;border-radius:8px;background:{'#f0fdf4' if '✅' in msg else '#fff7ed'};color:{'#15803d' if '✅' in msg else '#b45309'};font-weight:500;margin-top:4px;'>{msg}</div>"
+        return status_html, saved
+
+    email_btn.click(fn=on_subscribe, inputs=[email_name, email_input], outputs=[email_status, current_email])
+
+    # ── Search bar ────────────────────────────────────────────────────────────
+    gr.HTML("<div style='margin:16px 0 6px;font-weight:600;color:#1e293b;'>🔍 Search teams, matches, venues, NYC bars</div>")
+    with gr.Row():
+        search_box = gr.Textbox(
+            placeholder="e.g. France, MetLife Stadium, South Africa, Jackson Heights...",
+            label="", scale=5, container=False,
+        )
+        search_btn = gr.Button("Search", variant="secondary", scale=0)
+    search_results = gr.HTML()
+
+    search_btn.click(fn=do_search, inputs=[search_box, current_email], outputs=search_results)
+    search_box.submit(fn=do_search, inputs=[search_box, current_email], outputs=search_results)
+
+    gr.HTML("<hr style='margin:16px 0;border-color:#e2e8f0;'/>")
 
     with gr.Tabs():
 
