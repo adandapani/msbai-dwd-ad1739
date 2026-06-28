@@ -264,4 +264,10 @@ with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard") as app:
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
-    app.launch(server_name="0.0.0.0", server_port=port, theme=gr.themes.Soft())
+    app.launch(
+        server_name="0.0.0.0",
+        server_port=port,
+        theme=gr.themes.Soft(),
+        show_error=True,
+        share=False,
+    )
