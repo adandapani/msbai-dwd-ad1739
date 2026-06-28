@@ -306,22 +306,176 @@ def schedule_html(ko: pd.DataFrame) -> str:
     return html
 
 
+# ── country flags & NYC geo ───────────────────────────────────────────────────
+FLAG_MAP = {
+    "Algeria":"🇩🇿","Angola":"🇦🇴","Argentina":"🇦🇷","Armenia":"🇦🇲",
+    "Australia":"🇦🇺","Austria":"🇦🇹","Azerbaijan":"🇦🇿","Bahrain":"🇧🇭",
+    "Bangladesh":"🇧🇩","Belgium":"🇧🇪","Bolivia":"🇧🇴","Bosnia":"🇧🇦",
+    "Brazil":"🇧🇷","Bulgaria":"🇧🇬","Burkina Faso":"🇧🇫","Burundi":"🇧🇮",
+    "Cameroon":"🇨🇲","Canada":"🇨🇦","Chad":"🇹🇩","Chile":"🇨🇱",
+    "China":"🇨🇳","Colombia":"🇨🇴","Costa Rica":"🇨🇷","Croatia":"🇭🇷",
+    "Cuba":"🇨🇺","Czech Republic":"🇨🇿","Denmark":"🇩🇰",
+    "Dominican Republic":"🇩🇴","DR Congo":"🇨🇩","Ecuador":"🇪🇨",
+    "Egypt":"🇪🇬","El Salvador":"🇸🇻","England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Ethiopia":"🇪🇹",
+    "Finland":"🇫🇮","France":"🇫🇷","Georgia":"🇬🇪","Germany":"🇩🇪",
+    "Ghana":"🇬🇭","Greece":"🇬🇷","Guatemala":"🇬🇹","Guinea":"🇬🇳",
+    "Haiti":"🇭🇹","Honduras":"🇭🇳","Hungary":"🇭🇺","Iceland":"🇮🇸",
+    "India":"🇮🇳","Indonesia":"🇮🇩","Iran":"🇮🇷","Iraq":"🇮🇶",
+    "Ireland":"🇮🇪","Israel":"🇮🇱","Italy":"🇮🇹","Ivory Coast":"🇨🇮",
+    "Jamaica":"🇯🇲","Japan":"🇯🇵","Jordan":"🇯🇴","Kazakhstan":"🇰🇿",
+    "Kenya":"🇰🇪","Kosovo":"🇽🇰","Kuwait":"🇰🇼","Lebanon":"🇱🇧",
+    "Libya":"🇱🇾","Malaysia":"🇲🇾","Mali":"🇲🇱","Mexico":"🇲🇽",
+    "Montenegro":"🇲🇪","Morocco":"🇲🇦","Mozambique":"🇲🇿",
+    "Namibia":"🇳🇦","Netherlands":"🇳🇱","New Zealand":"🇳🇿",
+    "Nicaragua":"🇳🇮","Niger":"🇳🇪","Nigeria":"🇳🇬",
+    "North Macedonia":"🇲🇰","Norway":"🇳🇴","Oman":"🇴🇲","Pakistan":"🇵🇰",
+    "Panama":"🇵🇦","Paraguay":"🇵🇾","Peru":"🇵🇪","Philippines":"🇵🇭",
+    "Poland":"🇵🇱","Portugal":"🇵🇹","Qatar":"🇶🇦","Romania":"🇷🇴",
+    "Russia":"🇷🇺","Rwanda":"🇷🇼","Saudi Arabia":"🇸🇦","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    "Senegal":"🇸🇳","Serbia":"🇷🇸","Singapore":"🇸🇬","Slovakia":"🇸🇰",
+    "Slovenia":"🇸🇮","South Africa":"🇿🇦","South Korea":"🇰🇷","Spain":"🇪🇸",
+    "Sudan":"🇸🇩","Sweden":"🇸🇪","Switzerland":"🇨🇭","Syria":"🇸🇾",
+    "Tanzania":"🇹🇿","Thailand":"🇹🇭","Trinidad and Tobago":"🇹🇹",
+    "Tunisia":"🇹🇳","Turkey":"🇹🇷","UAE":"🇦🇪","Uganda":"🇺🇬",
+    "Ukraine":"🇺🇦","United States":"🇺🇸","Uruguay":"🇺🇾","Venezuela":"🇻🇪",
+    "Vietnam":"🇻🇳","Wales":"🏴󠁧󠁢󠁷󠁬󠁳󠁿","Yemen":"🇾🇪","Zambia":"🇿🇲","Zimbabwe":"🇿🇼",
+}
+
+# Neighborhood → [lat, lng] in NYC (approximate centroids)
+NYC_COORDS = {
+    "astoria": [40.7721, -73.9302], "hell's kitchen": [40.7638, -73.9918],
+    "east village": [40.7265, -73.9815], "midtown": [40.7549, -73.9840],
+    "times square": [40.7580, -73.9855], "brooklyn": [40.6782, -73.9442],
+    "williamsburg": [40.7081, -73.9571], "park slope": [40.6681, -73.9797],
+    "greenwich village": [40.7335, -74.0027], "west village": [40.7353, -74.0042],
+    "upper east side": [40.7736, -73.9566], "upper west side": [40.7870, -73.9754],
+    "chelsea": [40.7465, -73.9993], "soho": [40.7233, -74.0030],
+    "lower east side": [40.7150, -73.9851], "harlem": [40.8116, -73.9465],
+    "jackson heights": [40.7557, -73.8836], "sunnyside": [40.7438, -73.9196],
+    "flushing": [40.7675, -73.8330], "long island city": [40.7448, -73.9480],
+    "bushwick": [40.6944, -73.9213], "bay ridge": [40.6350, -74.0200],
+    "murray hill": [40.7479, -73.9756], "flatiron": [40.7410, -73.9893],
+    "gramercy": [40.7384, -73.9826], "tribeca": [40.7195, -74.0089],
+    "financial district": [40.7074, -74.0113], "downtown": [40.7127, -74.0059],
+    "hoboken": [40.7440, -74.0324], "queens": [40.7282, -73.7949],
+    "bronx": [40.8448, -73.8648], "staten island": [40.5795, -74.1502],
+}
+
+def get_flag(country: str) -> str:
+    return FLAG_MAP.get(country, "🏳️")
+
+def _extract_coords(text: str) -> list:
+    """Best-guess lat/lng from bar description text by neighbourhood keyword."""
+    t = text.lower()
+    for nbhd, coords in NYC_COORDS.items():
+        if nbhd in t:
+            return coords
+    return [40.7549, -73.9840]  # default Midtown
+
+def _has_big_screen(text: str) -> bool:
+    kw = ["big screen","large screen","projector","projection","multiple screen",
+          "giant screen","viewing party","screen"]
+    return any(k in text.lower() for k in kw)
+
+def _ticket_required(text: str) -> bool:
+    kw = ["ticket","cover","reservation","book","advance","rsvp","admission"]
+    return any(k in text.lower() for k in kw)
+
+
 # ── bars HTML ─────────────────────────────────────────────────────────────────
-def bars_html(bars: pd.DataFrame) -> str:
-    html = "<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;'>"
+def bars_html(bars: pd.DataFrame, r16_teams=None) -> str:
+    if r16_teams is None:
+        r16_teams = set()
+
+    import json, random
+    markers = []
+    cards = ""
+
     for _, r in bars.iterrows():
-        country = str(r.get("country", r.get("Country", "")))
-        spots = str(r.get("nyc_bars", r.get("NYC Viewing Spots", "")))
-        is_generic = "multi-nation" in spots.lower() or "Football Factory" in spots
-        bg = "#f8fafc" if is_generic else "white"
-        border = "#e2e8f0" if is_generic else "#3b82f6"
-        html += f"""
-        <div style="border:1px solid {border};border-radius:10px;padding:12px;background:{bg};">
-          <div style="font-weight:700;margin-bottom:4px;">🏳️ {country}</div>
-          <div style="font-size:0.82em;color:#475569;">🍺 {spots}</div>
+        country = str(r.get("country", r.get("Country", ""))).strip()
+        spots = str(r.get("nyc_bars", r.get("NYC Viewing Spots", ""))).strip()
+        flag = get_flag(country)
+        is_r16 = any(country.lower() == t.lower() for t in r16_teams)
+        is_generic = "multi-nation" in spots.lower() or "football factory" in spots.lower()
+        big_screen = _has_big_screen(spots)
+        needs_ticket = _ticket_required(spots)
+
+        if is_r16:
+            bg, border, header_bg = "#fef9c3", "#f59e0b", "linear-gradient(135deg,#fef9c3,#fde68a)"
+            r16_badge = "<span style='background:#f59e0b;color:#431407;font-size:0.7em;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px;'>⚡ R16</span>"
+        elif is_generic:
+            bg, border, header_bg = "#f8fafc", "#cbd5e1", "#f1f5f9"
+            r16_badge = ""
+        else:
+            bg, border, header_bg = "white", "#3b82f6", "linear-gradient(135deg,#eff6ff,#dbeafe)"
+            r16_badge = ""
+
+        badges = ""
+        if big_screen:
+            badges += "<span style='background:#0f172a;color:#06b6d4;font-size:0.68em;font-weight:600;padding:2px 7px;border-radius:8px;'>🖥️ Big Screen</span> "
+        if needs_ticket:
+            badges += "<span style='background:#fee2e2;color:#991b1b;font-size:0.68em;font-weight:600;padding:2px 7px;border-radius:8px;'>🎟️ Ticket Req'd</span>"
+
+        cards += f"""
+        <div style="border:1.5px solid {border};border-radius:12px;overflow:hidden;background:{bg};box-shadow:0 1px 6px rgba(0,0,0,0.06);">
+          <div style="padding:10px 14px 8px;background:{header_bg};border-bottom:1px solid {border};">
+            <div style="font-weight:700;font-size:1em;color:#0f172a;">{flag} {country}{r16_badge}</div>
+            <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">{badges if badges else '<span style="font-size:0.68em;color:#94a3b8;">ℹ️ Verify with venue</span>'}</div>
+          </div>
+          <div style="padding:10px 14px;font-size:0.82em;color:#334155;line-height:1.5;">🍺 {spots}</div>
         </div>"""
-    html += "</div>"
-    return html
+
+        # build map marker
+        coords = _extract_coords(spots)
+        # jitter slightly so stacked pins don't overlap
+        lat = coords[0] + (random.random() - 0.5) * 0.004
+        lng = coords[1] + (random.random() - 0.5) * 0.004
+        pin_color = "#f59e0b" if is_r16 else ("#94a3b8" if is_generic else "#3b82f6")
+        popup = f"{flag} {country}<br><small>{spots[:80]}{'…' if len(spots)>80 else ''}</small>"
+        markers.append({"lat": lat, "lng": lng, "color": pin_color, "popup": popup, "country": country})
+
+    markers_json = json.dumps(markers)
+
+    map_html = f"""
+    <div id="fifa-map" style="height:520px;border-radius:12px;overflow:hidden;border:1.5px solid #e2e8f0;"></div>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+    (function(){{
+      if(window._fifaMapInit) return; window._fifaMapInit = true;
+      var map = L.map('fifa-map').setView([40.730, -73.960], 11);
+      L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png',{{
+        attribution:'© OpenStreetMap © CARTO', maxZoom:18
+      }}).addTo(map);
+      var markers = {markers_json};
+      markers.forEach(function(m){{
+        var icon = L.divIcon({{
+          html: '<div style="background:'+m.color+';width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
+          iconSize:[14,14], iconAnchor:[7,7], className:''
+        }});
+        L.marker([m.lat, m.lng], {{icon:icon}})
+          .addTo(map)
+          .bindPopup('<b>'+m.country+'</b><br>'+m.popup.replace(m.country+'<br>',''), {{maxWidth:220}});
+      }});
+    }})();
+    </script>"""
+
+    legend = """
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:0.78em;align-items:center;">
+      <span style="color:#64748b;font-weight:600;">Map legend:</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f59e0b;margin-right:4px;"></span>R16 Qualified</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#3b82f6;margin-right:4px;"></span>Dedicated bar</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#94a3b8;margin-right:4px;"></span>Multi-nation bar</span>
+      <span>🖥️ = Big screen confirmed &nbsp; 🎟️ = Ticket / cover charge</span>
+    </div>"""
+
+    layout = f"""
+    {legend}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
+      <div style="display:grid;grid-template-columns:1fr;gap:10px;max-height:520px;overflow-y:auto;padding-right:4px;">{cards}</div>
+      <div>{map_html}</div>
+    </div>"""
+    return layout
 
 
 # ── data loaders ──────────────────────────────────────────────────────────────
@@ -435,8 +589,15 @@ def load_schedule():
 
 def load_bars():
     bars = load_table("nyc_bars")
+    standings = load_table("team_standings")
+    r16 = set(
+        standings.loc[
+            standings["status"].str.contains("qualified|Won group|2nd|best-3rd", case=False, na=False),
+            "team"
+        ].tolist()
+    )
     header = "<h2 style='color:#1e293b;margin-bottom:12px;'>🗽 NYC Supporter Bars by Country</h2>"
-    return header + bars_html(bars)
+    return header + bars_html(bars, r16_teams=r16)
 
 
 # ── gradio app ────────────────────────────────────────────────────────────────
