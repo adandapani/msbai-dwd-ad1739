@@ -51,10 +51,15 @@ def save_email(name: str, email: str) -> str:
         return "⚠️ Please enter a valid email address."
     try:
         client = get_client()
-        client.query(f"""
-            INSERT INTO `{PROJECT_ID}.{DATASET}.email_leads` (email, name, submitted_at, user_agent)
-            VALUES ('{email.replace("'","")}', '{name.replace("'","")}', CURRENT_TIMESTAMP(), 'web')
-        """).result()
+        table_ref = f"{PROJECT_ID}.{DATASET}.email_leads"
+        errors = client.insert_rows_json(table_ref, [{
+            "email": email,
+            "name": name,
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "user_agent": "web",
+        }])
+        if errors:
+            return f"❌ Could not save: {errors}"
         return f"✅ Thanks {name or 'there'}! You're subscribed for FIFA 2026 updates."
     except Exception as e:
         return f"❌ Could not save: {e}"
@@ -106,15 +111,15 @@ def do_search(query: str, user_email: str = "") -> str:
             if q in country.lower() or q in spots.lower():
                 results.append(("🗽 NYC Bar", country, spots))
 
-        # Log search to BigQuery
+        # Log search to BigQuery via streaming insert (free tier compatible)
         try:
             client = get_client()
-            safe_q = query.replace("'", "")
-            safe_email = (user_email or "").replace("'", "")
-            client.query(f"""
-                INSERT INTO `{PROJECT_ID}.{DATASET}.search_logs` (query, result_count, searched_at, user_email)
-                VALUES ('{safe_q}', {len(results)}, CURRENT_TIMESTAMP(), '{safe_email}')
-            """).result()
+            client.insert_rows_json(f"{PROJECT_ID}.{DATASET}.search_logs", [{
+                "query": query,
+                "result_count": len(results),
+                "searched_at": datetime.now(timezone.utc).isoformat(),
+                "user_email": user_email or "",
+            }])
         except Exception:
             pass
 
