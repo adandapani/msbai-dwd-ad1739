@@ -45,22 +45,21 @@ def load_table(table: str) -> pd.DataFrame:
 
 
 # ── email capture ─────────────────────────────────────────────────────────────
+LEADS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "email_leads.csv")
+
 def save_email(name: str, email: str) -> str:
+    import csv
     name = (name or "").strip()
     email = (email or "").strip().lower()
     if not email or not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
         return "⚠️ Please enter a valid email address."
     try:
-        client = get_client()
-        table_ref = f"{PROJECT_ID}.{DATASET}.email_leads"
-        errors = client.insert_rows_json(table_ref, [{
-            "email": email,
-            "name": name,
-            "submitted_at": datetime.now(timezone.utc).isoformat(),
-            "user_agent": "web",
-        }])
-        if errors:
-            return f"❌ Could not save: {errors}"
+        write_header = not os.path.exists(LEADS_FILE)
+        with open(LEADS_FILE, "a", newline="") as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(["email", "name", "submitted_at"])
+            w.writerow([email, name, datetime.now(timezone.utc).isoformat()])
         return f"✅ Thanks {name or 'there'}! You're subscribed for FIFA 2026 updates."
     except Exception as e:
         return f"❌ Could not save: {e}"
