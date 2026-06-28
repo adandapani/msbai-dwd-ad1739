@@ -16,7 +16,6 @@ def get_client():
     key_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if key_path and os.path.exists(key_path):
         return bigquery.Client(project=PROJECT_ID)
-    # Try base64-encoded credentials first (avoids all newline/escaping issues)
     sa_b64 = os.environ.get("GCP_SERVICE_ACCOUNT_B64")
     if sa_b64:
         import json, base64
@@ -25,7 +24,6 @@ def get_client():
             info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
         return bigquery.Client(project=PROJECT_ID, credentials=creds)
-
     sa_json = os.environ.get("GCP_SERVICE_ACCOUNT_JSON")
     if sa_json:
         import json
@@ -44,12 +42,12 @@ def load_table(table: str) -> pd.DataFrame:
     return client.query(f"SELECT * FROM `{PROJECT_ID}.{DATASET}.{table}`").to_dataframe()
 
 
-# ── prediction helpers ────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 def win_probability(s1: float, s2: float):
     total = s1 + s2
     if total == 0:
         return 0.5, 0.5
-    return round(s1 / total, 3), round(s2 / total, 3)
+    return round(s1 / total, 3), round(1 - s1 / total, 3)
 
 
 def get_team_stats(standings: pd.DataFrame, team: str):
@@ -59,12 +57,163 @@ def get_team_stats(standings: pd.DataFrame, team: str):
     return row.iloc[0] if not row.empty else None
 
 
+def prob_bar(p: float) -> str:
+    filled = int(round(p * 20))
+    bar = "█" * filled + "░" * (20 - filled)
+    return f"`{bar}` {p*100:.1f}%"
+
+
+def strength_bar(s: float) -> str:
+    filled = int(round(s * 10))
+    bar = "🟩" * filled + "⬜" * (10 - filled)
+    return bar
+
+
 def medal(i):
     return ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
 
 
-# ── tab builders ──────────────────────────────────────────────────────────────
-def build_todays_games(view_date: date):
+# ── match card HTML ───────────────────────────────────────────────────────────
+def match_card_html(matches: list) -> str:
+    if not matches:
+        return "<p style='color:#888;font-size:1.1em;'>No matches found for this date.</p>"
+
+    html = ""
+    for m in matches:
+        p1, p2 = m["p1"], m["p2"]
+        fav = m["team1"] if p1 >= p2 else m["team2"]
+        fav_p = max(p1, p2)
+        result_badge = ""
+        if m.get("result") and m["result"] not in ("TBD", "", "nan"):
+            result_badge = f"<span style='background:#22c55e;color:white;padding:2px 10px;border-radius:12px;font-weight:bold;margin-left:8px;'>✅ {m['result']}</span>"
+
+        pct1 = int(p1 * 100)
+        pct2 = int(p2 * 100)
+        color1 = "#3b82f6" if p1 >= p2 else "#94a3b8"
+        color2 = "#3b82f6" if p2 > p1 else "#94a3b8"
+
+        bar_html = f"""
+        <div style="display:flex;align-items:center;gap:6px;margin:8px 0;">
+          <span style="width:120px;text-align:right;font-weight:600;font-size:0.95em;">{m['team1']}</span>
+          <div style="flex:1;background:#e2e8f0;border-radius:8px;height:22px;overflow:hidden;display:flex;">
+            <div style="width:{pct1}%;background:{color1};display:flex;align-items:center;justify-content:center;color:white;font-size:0.8em;font-weight:bold;transition:width 0.5s;">
+              {''+str(pct1)+'%' if pct1 > 12 else ''}
+            </div>
+            <div style="width:{pct2}%;background:{color2};display:flex;align-items:center;justify-content:center;color:white;font-size:0.8em;font-weight:bold;">
+              {''+str(pct2)+'%' if pct2 > 12 else ''}
+            </div>
+          </div>
+          <span style="width:120px;font-weight:600;font-size:0.95em;">{m['team2']}</span>
+        </div>"""
+
+        nyc_html = ""
+        if m.get("bars1") and str(m["bars1"]) not in ("", "nan", "—"):
+            nyc_html += f"<div style='margin-top:4px;font-size:0.82em;color:#475569;'>🍺 <b>{m['team1']}:</b> {m['bars1']}</div>"
+        if m.get("bars2") and str(m["bars2"]) not in ("", "nan", "—"):
+            nyc_html += f"<div style='font-size:0.82em;color:#475569;'>🍺 <b>{m['team2']}:</b> {m['bars2']}</div>"
+
+        html += f"""
+        <div style="border:1px solid #e2e8f0;border-radius:14px;padding:18px 22px;margin-bottom:18px;background:white;box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <span style="background:#f1f5f9;color:#334155;padding:3px 12px;border-radius:20px;font-size:0.85em;font-weight:600;">⏰ {m['kickoff']} ET</span>
+            <span style="background:#dbeafe;color:#1d4ed8;padding:3px 12px;border-radius:20px;font-size:0.85em;font-weight:600;">{m['stage']}</span>
+            {result_badge}
+          </div>
+          <div style="font-size:1.25em;font-weight:700;margin-bottom:10px;color:#1e293b;">
+            ⚽ {m['team1']} <span style="color:#94a3b8;font-weight:400;">vs</span> {m['team2']}
+          </div>
+          {bar_html}
+          <div style="margin-top:10px;padding:10px 14px;background:#f0fdf4;border-radius:8px;border-left:4px solid #22c55e;">
+            🤖 <b>Predicted winner:</b> <span style="color:#15803d;font-weight:700;">{fav}</span>
+            <span style="color:#64748b;"> — {fav_p*100:.1f}% win probability based on goals scored, wins & tournament form</span>
+          </div>
+          <div style="margin-top:8px;font-size:0.85em;color:#64748b;">📍 {m['venue']} · {m['host_city']}</div>
+          {nyc_html}
+        </div>"""
+    return html
+
+
+# ── predictions HTML ──────────────────────────────────────────────────────────
+def predictions_html(qualified: pd.DataFrame) -> str:
+    html = "<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;'>"
+    colors = ["#fef9c3", "#f1f5f9", "#fef3c7"] + ["#f8fafc"] * 20
+    for i, (_, r) in enumerate(qualified.head(16).iterrows()):
+        s = float(r["strength_score"])
+        bar = int(s * 10)
+        bar_html = "🟩" * bar + "⬜" * (10 - bar)
+        border = "#eab308" if i == 0 else "#cbd5e1"
+        html += f"""
+        <div style="border:2px solid {border};border-radius:12px;padding:14px;background:{colors[i]};">
+          <div style="font-size:1.1em;font-weight:700;">{medal(i)} {r['team']}</div>
+          <div style="font-size:0.8em;color:#64748b;margin:4px 0;">Group {r['group_letter']} · {r['points']} pts · {r['goals_for']} goals scored</div>
+          <div style="font-size:1.1em;margin:6px 0;" title="Strength score">{bar_html}</div>
+          <div style="display:flex;gap:8px;font-size:0.8em;flex-wrap:wrap;">
+            <span style="background:#dcfce7;padding:2px 8px;border-radius:10px;">✅ {r['won']}W</span>
+            <span style="background:#fef9c3;padding:2px 8px;border-radius:10px;">🟡 {r['drawn']}D</span>
+            <span style="background:#fee2e2;padding:2px 8px;border-radius:10px;">❌ {r['lost']}L</span>
+            <span style="background:#dbeafe;padding:2px 8px;border-radius:10px;">⚡ {float(r['goals_per_game']):.1f} g/game</span>
+          </div>
+          <div style="margin-top:8px;font-size:0.8em;color:#475569;">Strength: <b>{s:.3f}</b></div>
+        </div>"""
+    html += "</div>"
+    return html
+
+
+# ── schedule HTML ─────────────────────────────────────────────────────────────
+def schedule_html(ko: pd.DataFrame) -> str:
+    ko = ko.copy()
+    ko["match_date"] = pd.to_datetime(ko["match_date"], errors="coerce")
+    ko = ko.sort_values("match_date")
+    today = date.today()
+
+    html = ""
+    current_round = None
+    for _, r in ko.iterrows():
+        rnd = str(r.get("stage", r.get("round", "")))
+        if rnd != current_round:
+            current_round = rnd
+            html += f"<h3 style='margin:18px 0 8px;color:#1e293b;border-bottom:2px solid #3b82f6;padding-bottom:4px;'>{rnd}</h3>"
+        d = r["match_date"]
+        is_today = hasattr(d, "date") and d.date() == today
+        bg = "#eff6ff" if is_today else "white"
+        border = "#3b82f6" if is_today else "#e2e8f0"
+        today_tag = " 🔴 TODAY" if is_today else ""
+        date_str = d.strftime("%a, %b %d") if pd.notna(d) else "TBD"
+        html += f"""
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;margin:4px 0;background:{bg};border:1px solid {border};border-radius:8px;">
+          <span style="min-width:110px;font-size:0.85em;color:#64748b;">{date_str}{today_tag}</span>
+          <span style="font-weight:600;flex:1;">{r.get('matchup','TBD')}</span>
+          <span style="font-size:0.82em;color:#64748b;">{r.get('kickoff_et','')}</span>
+          <span style="font-size:0.78em;color:#94a3b8;min-width:120px;text-align:right;">{r.get('host_city','')}</span>
+        </div>"""
+    return html
+
+
+# ── bars HTML ─────────────────────────────────────────────────────────────────
+def bars_html(bars: pd.DataFrame) -> str:
+    html = "<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;'>"
+    for _, r in bars.iterrows():
+        country = str(r.get("country", r.get("Country", "")))
+        spots = str(r.get("nyc_bars", r.get("NYC Viewing Spots", "")))
+        is_generic = "multi-nation" in spots.lower() or "Football Factory" in spots
+        bg = "#f8fafc" if is_generic else "white"
+        border = "#e2e8f0" if is_generic else "#3b82f6"
+        html += f"""
+        <div style="border:1px solid {border};border-radius:10px;padding:12px;background:{bg};">
+          <div style="font-weight:700;margin-bottom:4px;">🏳️ {country}</div>
+          <div style="font-size:0.82em;color:#475569;">🍺 {spots}</div>
+        </div>"""
+    html += "</div>"
+    return html
+
+
+# ── data loaders ──────────────────────────────────────────────────────────────
+def load_games(view_date):
+    if isinstance(view_date, str):
+        view_date = date.fromisoformat(str(view_date)[:10])
+    elif hasattr(view_date, "date"):
+        view_date = view_date.date()
+
     gs = load_table("group_stage_matches")
     ko = load_table("knockout_matches")
     standings = load_table("team_standings")
@@ -76,11 +225,7 @@ def build_todays_games(view_date: date):
     today_gs = gs[gs["match_date"] == view_date]
     today_ko = ko[ko["match_date"] == view_date]
 
-    if today_gs.empty and today_ko.empty:
-        return f"## No matches scheduled on {view_date}\nPick another date in the sidebar.", pd.DataFrame()
-
-    rows = []
-
+    matches = []
     for _, r in today_gs.iterrows():
         t1, t2 = str(r.get("team1", "")), str(r.get("team2", ""))
         s1 = get_team_stats(standings, t1)
@@ -88,20 +233,12 @@ def build_todays_games(view_date: date):
         sc1 = float(s1["strength_score"]) if s1 is not None else 0.5
         sc2 = float(s2["strength_score"]) if s2 is not None else 0.5
         p1, p2 = win_probability(sc1, sc2)
-        fav = t1 if p1 >= p2 else t2
-        fav_p = max(p1, p2)
-        rows.append({
-            "Kickoff (ET)": r.get("kickoff_et", ""),
-            "Stage": f"Group {r.get('group_letter','')}",
-            "Team 1": t1,
-            "Team 2": t2,
-            "Result": r.get("result", "TBD"),
-            "T1 Win%": f"{p1*100:.1f}%",
-            "T2 Win%": f"{p2*100:.1f}%",
-            "🤖 Predicted Winner": f"{fav} ({fav_p*100:.1f}%)",
-            "Venue": r.get("venue", ""),
-            "NYC Bars T1": r.get("nyc_bars_team1", ""),
-            "NYC Bars T2": r.get("nyc_bars_team2", ""),
+        matches.append({
+            "kickoff": r.get("kickoff_et", ""), "stage": f"Group {r.get('group_letter','')}",
+            "team1": t1, "team2": t2, "p1": p1, "p2": p2,
+            "result": str(r.get("result", "TBD")),
+            "venue": r.get("venue", ""), "host_city": r.get("host_city", ""),
+            "bars1": r.get("nyc_bars_team1", ""), "bars2": r.get("nyc_bars_team2", ""),
         })
 
     for _, r in today_ko.iterrows():
@@ -114,172 +251,135 @@ def build_todays_games(view_date: date):
         sc1 = float(s1["strength_score"]) if s1 is not None else 0.5
         sc2 = float(s2["strength_score"]) if s2 is not None else 0.5
         p1, p2 = win_probability(sc1, sc2)
-        fav = t1 if p1 >= p2 else t2
-        fav_p = max(p1, p2)
         b1 = bars_df[bars_df["country"].str.lower() == t1.lower()]
         b2 = bars_df[bars_df["country"].str.lower() == t2.lower()]
-        rows.append({
-            "Kickoff (ET)": r.get("kickoff_et", ""),
-            "Stage": r.get("stage", "Knockout"),
-            "Team 1": t1,
-            "Team 2": t2,
-            "Result": "TBD",
-            "T1 Win%": f"{p1*100:.1f}%",
-            "T2 Win%": f"{p2*100:.1f}%",
-            "🤖 Predicted Winner": f"{fav} ({fav_p*100:.1f}%)",
-            "Venue": r.get("venue", ""),
-            "NYC Bars T1": b1.iloc[0]["nyc_bars"] if not b1.empty else "—",
-            "NYC Bars T2": b2.iloc[0]["nyc_bars"] if not b2.empty else "—",
+        matches.append({
+            "kickoff": r.get("kickoff_et", ""), "stage": r.get("stage", "Knockout"),
+            "team1": t1, "team2": t2, "p1": p1, "p2": p2, "result": "TBD",
+            "venue": r.get("venue", ""), "host_city": r.get("host_city", ""),
+            "bars1": b1.iloc[0]["nyc_bars"] if not b1.empty else "—",
+            "bars2": b2.iloc[0]["nyc_bars"] if not b2.empty else "—",
         })
 
-    df = pd.DataFrame(rows).sort_values("Kickoff (ET)")
-    summary = f"## ⚽ {len(df)} match(es) on {view_date.strftime('%A, %B %d, %Y')}\n"
-    for _, r in df.iterrows():
-        summary += f"\n**{r['Kickoff (ET)']} ET** · {r['Stage']}  \n"
-        summary += f"🏳️ **{r['Team 1']}** {r['T1 Win%']} vs **{r['Team 2']}** {r['T2 Win%']}  \n"
-        summary += f"🤖 Prediction: **{r['🤖 Predicted Winner']}**  \n"
-        if r["Result"] not in ("TBD", ""):
-            summary += f"✅ Result: **{r['Result']}**  \n"
-        summary += f"📍 {r['Venue']}  \n---\n"
-
-    return summary, df
+    header = f"<h2 style='color:#1e293b;margin-bottom:4px;'>⚽ {len(matches)} match(es) on {view_date.strftime('%A, %B %d, %Y')}</h2>"
+    if not matches:
+        header += "<p style='color:#64748b;'>No games scheduled. Try another date.</p>"
+    return header + match_card_html(sorted(matches, key=lambda x: x["kickoff"]))
 
 
-def build_standings():
+def load_standings():
     standings = load_table("team_standings")
     standings = standings.sort_values(["group_letter", "points"], ascending=[True, False])
-    display = standings[[
-        "group_letter", "team", "played", "won", "drawn", "lost",
-        "goals_for", "goals_against", "goal_diff_num", "points",
-        "win_rate", "goals_per_game", "strength_score", "status",
-    ]].copy()
-    display.columns = [
-        "Group", "Team", "P", "W", "D", "L", "GF", "GA", "GD",
-        "Pts", "Win%", "G/Game", "Strength", "Status",
-    ]
-    display["Win%"] = (display["Win%"] * 100).round(1).astype(str) + "%"
-    display["G/Game"] = display["G/Game"].round(2)
-    display["Strength"] = display["Strength"].round(3)
-    return display
+    html = ""
+    for grp in sorted(standings["group_letter"].dropna().unique()):
+        grp_df = standings[standings["group_letter"] == grp]
+        html += f"<h3 style='margin:16px 0 6px;color:#1d4ed8;'>Group {grp}</h3>"
+        html += "<div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:0.88em;'>"
+        html += "<tr style='background:#f1f5f9;'><th style='padding:8px;text-align:left;'>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Strength</th><th>Status</th></tr>"
+        for i, (_, r) in enumerate(grp_df.iterrows()):
+            bg = "#f0fdf4" if i == 0 else "#eff6ff" if i == 1 else "white"
+            s = float(r["strength_score"])
+            bar = "🟩" * int(s * 8) + "⬜" * (8 - int(s * 8))
+            status_color = "#15803d" if "qualified" in str(r["status"]).lower() or "Won" in str(r["status"]) else "#b45309" if "3rd" in str(r["status"]) else "#dc2626"
+            html += f"<tr style='background:{bg};border-bottom:1px solid #e2e8f0;'>"
+            html += f"<td style='padding:8px;font-weight:600;'>{r['team']}</td>"
+            for col in ["played", "won", "drawn", "lost", "goals_for", "goals_against", "goal_diff_num", "points"]:
+                html += f"<td style='padding:8px;text-align:center;'>{r[col]}</td>"
+            html += f"<td style='padding:8px;text-align:center;' title='{s:.3f}'>{bar}</td>"
+            html += f"<td style='padding:8px;font-size:0.8em;color:{status_color};'>{r['status']}</td>"
+            html += "</tr>"
+        html += "</table></div>"
+    return html
 
 
-def build_predictions():
+def load_predictions():
     standings = load_table("team_standings")
     qualified = standings[
         standings["status"].str.contains("qualified|Won group|2nd|best-3rd", case=False, na=False)
-    ].copy()
-    qualified = qualified.sort_values("strength_score", ascending=False).reset_index(drop=True)
-
-    md = "## 🏆 Tournament Favourites\n"
-    md += "_Strength Score = 45% win rate + 30% goals/game + 15% defense + 10% points efficiency_\n\n"
-    for i, (_, r) in enumerate(qualified.head(10).iterrows()):
-        md += f"{medal(i)} **{r['team']}** (Group {r['group_letter']})  \n"
-        md += f"   Score: `{r['strength_score']:.3f}` · {r['goals_for']} goals · {r['won']}W/{r['drawn']}D/{r['lost']}L · {r['points']} pts  \n\n"
-
-    display = qualified[[
-        "team", "group_letter", "points", "goals_for", "goals_against",
-        "win_rate", "goals_per_game", "strength_score", "status",
-    ]].head(20).copy()
-    display.columns = ["Team", "Grp", "Pts", "GF", "GA", "Win%", "G/Game", "Strength Score", "Status"]
-    display["Win%"] = (display["Win%"] * 100).round(1).astype(str) + "%"
-    display["G/Game"] = display["G/Game"].round(2)
-    display["Strength Score"] = display["Strength Score"].round(3)
-    return md, display
+    ].sort_values("strength_score", ascending=False).reset_index(drop=True)
+    header = """<div style='margin-bottom:16px;'>
+    <h2 style='color:#1e293b;margin-bottom:4px;'>🏆 Tournament Favourites</h2>
+    <p style='color:#64748b;font-size:0.88em;'>Strength Score = 45% win rate + 30% goals/game + 15% defense + 10% points efficiency</p>
+    </div>"""
+    return header + predictions_html(qualified)
 
 
-def build_nyc_bars():
+def load_schedule():
+    ko = load_table("knockout_matches")
+    header = "<h2 style='color:#1e293b;margin-bottom:4px;'>📅 Full Knockout Schedule</h2>"
+    return header + schedule_html(ko)
+
+
+def load_bars():
     bars = load_table("nyc_bars")
-    return bars.rename(columns={"country": "Country", "nyc_bars": "NYC Viewing Spots"})
+    header = "<h2 style='color:#1e293b;margin-bottom:12px;'>🗽 NYC Supporter Bars by Country</h2>"
+    return header + bars_html(bars)
 
 
 # ── gradio app ────────────────────────────────────────────────────────────────
-with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard") as app:
-    gr.Markdown("""
-    # ⚽ FIFA 2026 World Cup · NYC Dashboard
-    **Today's games · Standings · Win predictions · NYC bars**
+CSS = """
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+.gradio-container { max-width: 1100px !important; }
+"""
+
+with gr.Blocks(title="⚽ FIFA 2026 NYC Dashboard", css=CSS) as app:
+    gr.HTML("""
+    <div style="background:linear-gradient(135deg,#1d4ed8,#059669);padding:24px 28px;border-radius:14px;margin-bottom:16px;color:white;">
+      <h1 style="margin:0;font-size:1.8em;">⚽ FIFA 2026 World Cup · NYC Dashboard</h1>
+      <p style="margin:6px 0 0;opacity:0.85;">Live scores · Group standings · AI win predictions · NYC viewing spots</p>
+    </div>
     """)
 
     with gr.Tabs():
 
         # ── Tab 1: Today's Games ──────────────────────────────────────────────
-        with gr.TabItem("🗓️ Today's Games & Predictions"):
+        with gr.TabItem("🗓️ Today's Games"):
             with gr.Row():
                 date_input = gr.DateTime(
-                    label="View date",
+                    label="Select date",
                     value=str(date.today()),
                     include_time=False,
                 )
-                refresh_btn = gr.Button("🔄 Load Games", variant="primary")
-
-            games_md = gr.Markdown()
-            games_table = gr.Dataframe(
-                label="Match Details",
-                wrap=True,
-                interactive=False,
-            )
-
-            def on_load_games(d):
-                if isinstance(d, str):
-                    d = date.fromisoformat(d[:10])
-                elif hasattr(d, "date"):
-                    d = d.date()
-                return build_todays_games(d)
-
-            refresh_btn.click(
-                fn=on_load_games,
-                inputs=date_input,
-                outputs=[games_md, games_table],
-            )
-            app.load(
-                fn=lambda: build_todays_games(date.today()),
-                outputs=[games_md, games_table],
-            )
+                load_btn = gr.Button("🔄 Load Games", variant="primary", scale=0)
+            games_html = gr.HTML()
+            load_btn.click(fn=load_games, inputs=date_input, outputs=games_html)
+            app.load(fn=lambda: load_games(date.today()), outputs=games_html)
 
         # ── Tab 2: Standings ──────────────────────────────────────────────────
         with gr.TabItem("📊 Group Standings"):
-            standings_btn = gr.Button("🔄 Load Standings", variant="primary")
-            standings_table = gr.Dataframe(
-                label="All Groups — sorted by points",
-                wrap=True,
-                interactive=False,
-            )
-            standings_btn.click(fn=build_standings, outputs=standings_table)
-            app.load(fn=build_standings, outputs=standings_table)
+            standings_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
+            standings_html = gr.HTML()
+            standings_btn.click(fn=load_standings, outputs=standings_html)
+            app.load(fn=load_standings, outputs=standings_html)
 
         # ── Tab 3: Predictions ────────────────────────────────────────────────
-        with gr.TabItem("🏆 Tournament Predictions"):
-            pred_btn = gr.Button("🔄 Refresh Predictions", variant="primary")
-            pred_md = gr.Markdown()
-            pred_table = gr.Dataframe(
-                label="Top 20 Contenders",
-                wrap=True,
-                interactive=False,
-            )
-            pred_btn.click(fn=build_predictions, outputs=[pred_md, pred_table])
-            app.load(fn=build_predictions, outputs=[pred_md, pred_table])
+        with gr.TabItem("🏆 Predictions"):
+            pred_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
+            pred_html = gr.HTML()
+            pred_btn.click(fn=load_predictions, outputs=pred_html)
+            app.load(fn=load_predictions, outputs=pred_html)
 
-        # ── Tab 4: NYC Bars ───────────────────────────────────────────────────
-        with gr.TabItem("🗽 NYC Viewing Spots"):
-            bars_btn = gr.Button("🔄 Load Bars", variant="primary")
-            bars_table = gr.Dataframe(
-                label="NYC Supporter Bars by Country",
-                wrap=True,
-                interactive=False,
-            )
-            bars_btn.click(fn=build_nyc_bars, outputs=bars_table)
-            app.load(fn=build_nyc_bars, outputs=bars_table)
+        # ── Tab 4: Full Schedule ──────────────────────────────────────────────
+        with gr.TabItem("📅 Full Schedule"):
+            sched_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
+            sched_html = gr.HTML()
+            sched_btn.click(fn=load_schedule, outputs=sched_html)
+            app.load(fn=load_schedule, outputs=sched_html)
 
-    gr.Markdown("""
-    ---
-    📡 Data: BigQuery `proud-sweep-323918.fifa_2026` · Refreshes on page load
-    """)
+        # ── Tab 5: NYC Bars ───────────────────────────────────────────────────
+        with gr.TabItem("🗽 NYC Bars"):
+            bars_btn = gr.Button("🔄 Refresh", variant="primary", scale=0)
+            bars_html_out = gr.HTML()
+            bars_btn.click(fn=load_bars, outputs=bars_html_out)
+            app.load(fn=load_bars, outputs=bars_html_out)
+
+    gr.HTML("<div style='text-align:center;color:#94a3b8;font-size:0.8em;margin-top:12px;'>📡 Live data from BigQuery · proud-sweep-323918.fifa_2026 · Refreshes on page load</div>")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.launch(
         server_name="0.0.0.0",
         server_port=port,
-        theme=gr.themes.Soft(),
         show_error=True,
         share=False,
     )
