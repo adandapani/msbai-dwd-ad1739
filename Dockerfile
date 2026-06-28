@@ -4,12 +4,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY dashboard.py .
+COPY dashboard_gradio.py .
 COPY data/ ./data/
 
-EXPOSE 8080
+EXPOSE 10000
 
-CMD ["streamlit", "run", "dashboard.py", \
-     "--server.port=8080", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true"]
+CMD ["python", "dashboard_gradio.py"]
